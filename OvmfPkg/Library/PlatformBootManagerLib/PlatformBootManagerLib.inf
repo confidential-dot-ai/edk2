@@ -41,6 +41,7 @@
   UefiRuntimeServicesTableLib
   BaseMemoryLib
   DebugLib
+  HobLib
   PcdLib
   UefiBootManagerLib
   BootLogoLib
@@ -90,3 +91,4 @@
   gUefiShellFileGuid
   gGrubFileGuid
   gUiAppFileGuid
+  gEfiIgvmDataHobGuid

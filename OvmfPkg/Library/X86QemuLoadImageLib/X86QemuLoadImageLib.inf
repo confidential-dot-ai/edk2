@@ -29,6 +29,7 @@
 
 [LibraryClasses]
   DebugLib
+  HobLib
   MemoryAllocationLib
   LoadLinuxLib
   PrintLib
@@ -43,6 +44,7 @@
   gOvmfLoadedX86LinuxKernelProtocolGuid
 
 [Guids]
+  gEfiIgvmDataHobGuid
   gQemuKernelLoaderFsMediaGuid
 
 [Pcd]
