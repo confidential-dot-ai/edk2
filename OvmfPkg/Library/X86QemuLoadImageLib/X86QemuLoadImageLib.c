@@ -494,6 +494,13 @@ QemuLoadKernelImage (
     }
     case EFI_UNSUPPORTED:
       //
+      // The legacy loader reads the kernel from fw_cfg, not the IGVM image.
+      //
+      if (IgvmHasKernel ()) {
+        return EFI_UNSUPPORTED;
+      }
+
+      //
       // The image is not natively supported or cross-type supported. Let's try
       // loading it using the loader that parses the bzImage metadata directly.
       //
