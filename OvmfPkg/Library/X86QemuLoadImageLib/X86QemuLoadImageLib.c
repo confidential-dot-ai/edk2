@@ -11,10 +11,12 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#include <Uefi.h>
+#include <PiDxe.h>
 
 #include <Guid/QemuKernelLoaderFsMedia.h>
+#include <IndustryStandard/IgvmData.h>
 #include <Library/DebugLib.h>
+#include <Library/HobLib.h>
 #include <Library/LoadLinuxLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
@@ -333,6 +335,33 @@ QemuUnloadLegacyImage (
 }
 
 /**
+  Return TRUE if the launch-measured IGVM image carries the kernel or shim.
+**/
+STATIC
+BOOLEAN
+IgvmHasKernel (
+  VOID
+  )
+{
+  EFI_HOB_GUID_TYPE  *Hob;
+  EFI_IGVM_DATA_HOB  *IgvmData;
+
+  for (Hob = GetFirstGuidHob (&gEfiIgvmDataHobGuid);
+       Hob != NULL;
+       Hob = GetNextGuidHob (&gEfiIgvmDataHobGuid, GET_NEXT_HOB (Hob)))
+  {
+    IgvmData = GET_GUID_HOB_DATA (Hob);
+    if ((IgvmData->DataType == EFI_IGVM_DATA_TYPE_KERNEL) ||
+        (IgvmData->DataType == EFI_IGVM_DATA_TYPE_SHIM))
+    {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
   Download the kernel, the initial ramdisk, and the kernel command line from
   QEMU's fw_cfg. The kernel will be instructed via its command line to load
   the initrd from the same Simple FileSystem where the kernel was loaded from.
@@ -465,6 +494,13 @@ QemuLoadKernelImage (
     }
     case EFI_UNSUPPORTED:
       //
+      // The legacy loader reads the kernel from fw_cfg, not the IGVM image.
+      //
+      if (IgvmHasKernel ()) {
+        return EFI_UNSUPPORTED;
+      }
+
+      //
       // The image is not natively supported or cross-type supported. Let's try
       // loading it using the loader that parses the bzImage metadata directly.
       //
@@ -500,8 +536,19 @@ QemuLoadKernelImage (
                   );
   ASSERT_EFI_ERROR (Status);
 
-  QemuFwCfgSelectItem (QemuFwCfgItemCommandLineSize);
-  CommandLineSize = (UINTN)QemuFwCfgRead32 ();
+  //
+  // A kernel from the IGVM image is covered by the launch measurement, the
+  // fw_cfg command line and initrd are not: do not pass them to the kernel.
+  //
+  if (IgvmHasKernel ()) {
+    CommandLineSize = 0;
+    InitrdSize      = 0;
+  } else {
+    QemuFwCfgSelectItem (QemuFwCfgItemCommandLineSize);
+    CommandLineSize = (UINTN)QemuFwCfgRead32 ();
+    QemuFwCfgSelectItem (QemuFwCfgItemInitrdSize);
+    InitrdSize = (UINTN)QemuFwCfgRead32 ();
+  }
 
   if (CommandLineSize == 0) {
     KernelLoadedImage->LoadOptionsSize = 0;
@@ -533,9 +580,6 @@ QemuLoadKernelImage (
     //
     KernelLoadedImage->LoadOptionsSize = (UINT32)((CommandLineSize - 1) * 2);
   }
-
-  QemuFwCfgSelectItem (QemuFwCfgItemInitrdSize);
-  InitrdSize = (UINTN)QemuFwCfgRead32 ();
 
   if (InitrdSize > 0) {
     //

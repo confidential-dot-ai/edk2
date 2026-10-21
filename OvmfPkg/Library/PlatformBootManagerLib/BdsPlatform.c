@@ -9,6 +9,7 @@
 #include "BdsPlatform.h"
 #include <Guid/RootBridgesConnectedEventGroup.h>
 #include <Guid/SerialPortLibVendor.h>
+#include <IndustryStandard/IgvmData.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/VirtioDevice.h>
 #include <Library/PlatformBmPrintScLib.h>
@@ -1598,6 +1599,33 @@ SaveS3BootScript (
 }
 
 /**
+  Return TRUE if the launch-measured IGVM image carries the kernel or shim.
+**/
+STATIC
+BOOLEAN
+IgvmHasKernel (
+  VOID
+  )
+{
+  EFI_HOB_GUID_TYPE  *Hob;
+  EFI_IGVM_DATA_HOB  *IgvmData;
+
+  for (Hob = GetFirstGuidHob (&gEfiIgvmDataHobGuid);
+       Hob != NULL;
+       Hob = GetNextGuidHob (&gEfiIgvmDataHobGuid, GET_NEXT_HOB (Hob)))
+  {
+    IgvmData = GET_GUID_HOB_DATA (Hob);
+    if ((IgvmData->DataType == EFI_IGVM_DATA_TYPE_KERNEL) ||
+        (IgvmData->DataType == EFI_IGVM_DATA_TYPE_SHIM))
+    {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
   Do the platform specific action after the console is ready
 
   Possible things that can be done in PlatformBootManagerAfterConsole:
@@ -1665,6 +1693,16 @@ PlatformBootManagerAfterConsole (
   // Process QEMU's -kernel command line option
   //
   TryRunningQemuKernel ();
+
+  //
+  // The IGVM kernel is the only launch-measured boot payload. If it did not
+  // start or it returned, do not boot anything else (a disk, the shell).
+  //
+  if (IgvmHasKernel ()) {
+    DEBUG ((DEBUG_ERROR, "%a: IGVM kernel did not boot, shutting down\n", __func__));
+    gRT->ResetSystem (EfiResetShutdown, EFI_SECURITY_VIOLATION, 0, NULL);
+    CpuDeadLoop ();
+  }
 
   //
   // Perform some platform specific connect sequence
